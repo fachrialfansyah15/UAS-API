@@ -16,4 +16,10 @@ export default class RefreshToken extends BaseModel {
 
   @column()
   public revoked!: boolean
+
+  @column.dateTime({ autoCreate: true })
+  public createdAt!: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  public updatedAt!: DateTime
 }
