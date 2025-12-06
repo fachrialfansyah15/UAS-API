@@ -104,3 +104,5 @@ router
 
 router.post('/register', [SessionController, 'register'])
 router.post('/login', [SessionController, 'login'])
+router.post('/refresh', [SessionController, 'refresh'])
+
