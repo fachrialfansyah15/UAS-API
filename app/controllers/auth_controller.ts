@@ -1,87 +1,69 @@
+import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
 import RefreshToken from '#models/refresh_token'
-import type { HttpContext } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
-import { randomUUID } from 'crypto'
+import crypto from 'crypto'
 
 export default class AuthController {
-  // =====================================================
-  // LOGIN
-  // =====================================================
-  public async login({ auth, request, response }: HttpContext) {
-    const data = request.only(['email', 'password'])
-
-    try {
-      const user = await User.verifyCredentials(data.email, data.password)
-
-      // Access Token (2 jam)
-      const accessToken = await auth.use('api').createToken(user, [], {
-        expiresIn: '2 hours',
-      })
-
-      // Refresh token (2 jam)
-      const refreshToken = await RefreshToken.create({
-        userId: user.id,
-        token: randomUUID(),
-        expiresAt: DateTime.now().plus({ hours: 2 }),
-      })
-
-      return response.ok({
-        access_token: accessToken.value,
-        refresh_token: refreshToken.token,
-      })
-    } catch (error) {
-      return response.unauthorized({ message: 'Invalid credentials' })
-    }
-  }
-
-  // =====================================================
   // REGISTER
-  // =====================================================
-  public async register({ auth, request, response }: HttpContext) {
+  public async register({ request, response }: HttpContext) {
     const data = request.only(['name', 'email', 'password'])
 
-    try {
-      const user = await User.create(data)
+    const user = await User.create(data)
 
-      // Access Token (2 jam)
-      const accessToken = await auth.use('api').createToken(user, [], {
-        expiresIn: '2 hours',
-      })
+    const accessToken = await User.accessTokens.create(user)
 
-      // Refresh Token (2 jam)
-      const refreshToken = await RefreshToken.create({
-        userId: user.id,
-        token: randomUUID(),
-        expiresAt: DateTime.now().plus({ hours: 2 }),
-      })
+    const refreshToken = crypto.randomUUID()
 
-      user.refresh()
+    await RefreshToken.create({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: DateTime.now().plus({ days: 7 }),
+      revoked: false,
+    })
 
-      return response.ok({
-        user,
-        access_token: accessToken.value,
-        refresh_token: refreshToken.token,
-      })
-    } catch (error) {
-      return response.unauthorized({ message: 'Invalid credentials' })
-    }
+    return response.created({
+      user,
+      access_token: accessToken.value!.release(),
+      refresh_token: refreshToken,
+    })
   }
 
-  // =====================================================
-  // REFRESH TOKEN
-  // =====================================================
-  public async refresh({ request, response, auth }: HttpContext) {
-    const oldToken = request.input('refresh_token')
+  // LOGIN
+  public async login({ request, response }: HttpContext) {
+    const { email, password } = request.only(['email', 'password'])
 
-    if (!oldToken) {
+    const user = await User.verifyCredentials(email, password)
+
+    const accessToken = await User.accessTokens.create(user)
+
+    const refreshToken = crypto.randomUUID()
+
+    await RefreshToken.create({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: DateTime.now().plus({ days: 7 }),
+      revoked: false,
+    })
+
+    return response.ok({
+      user,
+      access_token: accessToken.value!.release(),
+      refresh_token: refreshToken,
+    })
+  }
+
+  // REFRESH
+  public async refresh({ request, response }: HttpContext) {
+    const oldRefresh = request.input('refresh_token')
+
+    if (!oldRefresh) {
       return response.badRequest({ message: 'Refresh token is required' })
     }
 
-    // Cari refresh token di database
     const stored = await RefreshToken
       .query()
-      .where('token', oldToken)
+      .where('token', oldRefresh)
       .where('revoked', false)
       .first()
 
@@ -89,32 +71,29 @@ export default class AuthController {
       return response.unauthorized({ message: 'Invalid refresh token' })
     }
 
-    // Cek expired (lebih dari 2 jam)
     if (stored.expiresAt < DateTime.now()) {
       return response.unauthorized({ message: 'Refresh token expired' })
     }
 
     const user = await User.findOrFail(stored.userId)
 
-    // Buat access token baru (2 jam)
-    const newAccessToken = await auth.use('api').createToken(user, [], {
-      expiresIn: '2 hours',
-    })
+    const newAccessToken = await User.accessTokens.create(user)
 
-    // Revoke refresh token lama
     stored.revoked = true
     await stored.save()
 
-    // Refresh token baru (2 jam)
-    const newRefreshToken = await RefreshToken.create({
+    const newRefresh = crypto.randomUUID()
+
+    await RefreshToken.create({
       userId: user.id,
-      token: randomUUID(),
-      expiresAt: DateTime.now().plus({ hours: 2 }),
+      token: newRefresh,
+      expiresAt: DateTime.now().plus({ days: 7 }),
+      revoked: false,
     })
 
     return response.ok({
-      access_token: newAccessToken.value,
-      refresh_token: newRefreshToken.token,
+      access_token: newAccessToken.value!.release(),
+      refresh_token: newRefresh,
     })
   }
 }

@@ -10,6 +10,10 @@ import { middleware } from './kernel.js'
 import NumbersController from '#controllers/numbers_controller'
 import ExternalQuizController from '#controllers/open_trivias_controller'
 
+router.post('/register', [SessionController, 'register'])
+router.post('/login', [SessionController, 'login'])
+router.post('/refresh', [SessionController, 'refresh'])
+
 router.get('/', async () => {
   return { hello: 'world' }
 })
@@ -102,7 +106,5 @@ router
   .prefix('/superadmin')
   .use(middleware.auth())
 
-router.post('/register', [SessionController, 'register'])
-router.post('/login', [SessionController, 'login'])
-router.post('/refresh', [SessionController, 'refresh'])
+
 
